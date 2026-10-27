@@ -1,0 +1,422 @@
+Dynamic Option Hedging with Transaction Costs
+Project Overview
+This project investigates how effectively a short European call option can be hedged using Black-Scholes delta hedging, and how the hedge changes once realistic frictions such as discrete rebalancing, volatility mismatch and transaction costs are introduced.
+The project begins with analytical Black-Scholes pricing and Monte Carlo validation, then progressively develops a dynamic delta-hedging framework. The main objective is to answer a practical derivatives risk-management question:
+Can an event-driven delta-hedging strategy reduce trading activity and transaction costs while preserving most of the risk reduction achieved by daily hedging?
+
+The final strategy uses a delta threshold rather than a fixed calendar schedule. Instead of rebalancing every day, the hedge is only adjusted when the model delta moves sufficiently far from the current stock position.
+The threshold is then optimised across different option scenarios, tested across multiple simulation seeds, and finally evaluated on historical underlying price paths using frozen hedge rules.
+1. Black-Scholes Pricing
+The project first implements the Black-Scholes model for European call and put options.
+For a European call:
+\[
+C = S_0N(d_1) - Ke^{-rT}N(d_2)
+\]
+where
+\[
+d_1 =
+\frac{\ln(S_0/K)+(r+\frac{1}{2}\sigma^2)T}
+{\sigma\sqrt{T}}
+\]
+and
+\[
+d_2=d_1-\sigma\sqrt{T}.
+\]
+The main inputs are:
+- \(S_0\): current stock price
+- \(K\): strike price
+- \(T\): time to expiry
+- \(r\): continuously compounded risk-free rate
+- \(\sigma\): annualised volatility
+The implementation also calculates the main Greeks used later in the project:
+- Delta
+- Gamma
+- Vega
+- Theta
+For a European call:
+\[
+\Delta=N(d_1).
+\]
+Delta is central to the hedging framework because it measures the option's first-order sensitivity to changes in the underlying stock price.
+2. Monte Carlo Pricing Validation
+A Monte Carlo pricing model was built to validate the analytical Black-Scholes implementation.
+Terminal stock prices are simulated under geometric Brownian motion:
+\[
+S_T =
+S_0
+\exp\left[
+\left(r-\frac{1}{2}\sigma^2\right)T
++\sigma\sqrt{T}Z
+\right]
+\]
+with
+\[
+Z\sim N(0,1).
+\]
+For the baseline case:
+- \(S_0=100\)
+- \(K=100\)
+- \(T=1\)
+- \(r=5\%\)
+- \(\sigma=20\%\)
+the Black-Scholes call value was approximately:
+\[
+£10.4506
+\]
+while the Monte Carlo estimate using 100,000 simulations was approximately:
+\[
+£10.4739.
+\]
+The difference was only around:
+\[
+£0.0233.
+\]
+This provided an initial validation that the simulation framework was consistent with the analytical model.
+3. Dynamic Delta Hedging
+The project then models the position of a trader who sells one European call and dynamically hedges the resulting exposure.
+The hedge process is:
+1. Sell one call and receive the option premium.
+2. Calculate the call delta.
+3. Buy the corresponding number of shares.
+4. Finance the stock purchase through the cash account.
+5. Recalculate delta as the stock evolves.
+6. Buy or sell stock to restore the hedge.
+7. Accrue the cash balance at the risk-free rate.
+8. Settle the call payoff at expiry.
+9. Record the final hedge P&L.
+In a continuous Black-Scholes world, the option can theoretically be replicated perfectly.
+In practice, rebalancing is discrete.
+This produces a residual hedging error.
+4. Daily Hedging Baseline
+The first large simulation used:
+- 1,000 simulated stock paths
+- 252 hedge steps per year
+- 20% pricing volatility
+- 20% realised volatility
+- no transaction costs
+The results were:
+Metric	Result
+Mean P&L	£0.0014
+P&L standard deviation	£0.4323
+Minimum P&L	-£1.9208
+Maximum P&L	£1.6249
+5th percentile	-£0.6930
+95th percentile	£0.7043
+
+
+The mean P&L was approximately zero, as expected when the option is priced, simulated and hedged under the same model assumptions.
+However, the non-zero P&L dispersion showed that discrete hedging introduces residual risk.
+5. Hedging Frequency
+The next experiment compared monthly, weekly and daily rebalancing.
+Frequency	Mean P&L	P&L SD	5th pct	95th pct
+Monthly	£0.0020	£1.9401	-£3.2938	£3.1690
+Weekly	-£0.0376	£0.9504	-£1.6658	£1.4374
+Daily	£0.0014	£0.4323	-£0.6930	£0.7043
+
+
+The central result was:
+\[
+\boxed{
+\text{More frequent hedging}
+\Rightarrow
+\text{lower hedging-error dispersion}
+}
+\]
+Moving from monthly to daily hedging reduced the standard deviation of P&L by approximately 78%.
+This confirmed the standard Black-Scholes intuition: more frequent rebalancing makes the discrete hedge behave more like the theoretical continuous hedge.
+6. Pricing Volatility vs Realised Volatility
+The project then separated:
+- pricing / implied volatility
+- realised volatility
+The option continued to be priced and delta-hedged using 20% volatility, while the underlying was simulated using different realised volatility levels.
+Realised volatility	Mean P&L	P&L SD
+10%	£3.8350	£1.0897
+20%	-£0.0017	£0.4361
+30%	-£3.9405	£1.9026
+40%	-£7.8566	£4.0590
+
+
+This demonstrated that a delta-hedged short option position remains exposed to volatility.
+When realised volatility was below the volatility used to price the option, the short option position generated positive average P&L.
+When realised volatility exceeded the pricing volatility, average P&L became increasingly negative.
+The result is consistent with the intuition that a delta-hedged short option is still short volatility / gamma exposure.
+7. Transaction Costs
+A proportional transaction cost of 0.10% of the value traded was then added.
+This changed the hedging problem fundamentally.
+Without transaction costs:
+\[
+\text{more hedging}
+\Rightarrow
+\text{less risk}.
+\]
+With transaction costs:
+\[
+\text{more hedging}
+\Rightarrow
+\text{less risk}
++
+\text{higher cost}.
+\]
+The results were:
+Frequency	Mean P&L	P&L SD	Mean transaction cost
+Monthly	-£0.2684	£1.9204	£0.2317
+Weekly	-£0.3553	£0.9446	£0.3482
+Daily	-£0.6353	£0.4881	£0.6205
+
+
+Daily hedging provided the smallest P&L dispersion but also the highest trading cost.
+This established the central trade-off:
+\[
+\boxed{
+\text{hedging accuracy}
+\quad\text{vs}\quad
+\text{transaction cost}
+}
+\]
+8. Hedging Frequency Sweep
+The next experiment increased the granularity of the frequency comparison.
+The frequencies tested were:
+- 12 hedges/year
+- 26 hedges/year
+- 52 hedges/year
+- 104 hedges/year
+- 156 hedges/year
+- 252 hedges/year
+The standard deviation of hedging P&L declined steadily as frequency increased:
+\[
+1.9204
+\rightarrow
+1.3617
+\rightarrow
+0.9446
+\rightarrow
+0.6895
+\rightarrow
+0.5787
+\rightarrow
+0.4881
+\]
+while mean transaction costs increased:
+\[
+0.2317
+\rightarrow
+0.2822
+\rightarrow
+0.3482
+\rightarrow
+0.4413
+\rightarrow
+0.5136
+\rightarrow
+0.6205.
+\]
+The risk curve showed diminishing returns: large early reductions in hedging error were achieved when moving from monthly toward weekly hedging, but each additional increase in frequency produced smaller incremental risk reductions.
+This suggested that calendar-based daily hedging may be inefficient.
+9. Event-Driven Hedging
+To improve efficiency, the project replaced fixed-frequency rebalancing with an event-driven rule.
+The hedge is monitored daily, but the trader only rebalances when:
+\[
+|\Delta_{\text{target}}-\Delta_{\text{held}}|
+\geq
+\delta^*.
+\]
+The parameter \(\delta^*\) is the hedge threshold.
+For example, with:
+\[
+\delta^*=0.02,
+\]
+a trader currently holding 0.54 shares will not rebalance if model delta moves to 0.55.
+If model delta reaches 0.56, the hedge is adjusted.
+Thresholds of:
+- 0.01
+- 0.02
+- 0.05
+- 0.10
+were first tested across several option scenarios:
+- ATM 1Y
+- ITM 1Y
+- OTM 1Y
+- ATM 3M
+- ATM 1Y high volatility
+The results showed that small thresholds could materially reduce trading activity while preserving most of the risk reduction of daily hedging.
+For example, for the ATM 1Y option:
+Strategy	P&L SD	Mean cost	Mean rebalances
+Daily fixed	£0.4788	£0.6142	~251
+\(\Delta^*=0.01\)	£0.4894	£0.5816	145
+\(\Delta^*=0.02\)	£0.5221	£0.5258	97
+\(\Delta^*=0.05\)	£0.7026	£0.3924	37
+\(\Delta^*=0.10\)	£1.0929	£0.2934	13
+
+
+A threshold around 0.01–0.02 appeared to offer an attractive trade-off.
+10. Threshold Optimisation
+A formal optimisation rule was then introduced.
+For a chosen risk tolerance, the objective was:
+\[
+\min_{\delta^*}
+E[\text{transaction cost}]
+\]
+subject to:
+\[
+\sigma_{\text{event}}
+\leq
+(1+\tau)
+\sigma_{\text{daily}},
+\]
+where \(\tau\) is the permitted increase in hedging risk.
+Risk tolerances of:
+- 5%
+- 10%
+- 20%
+- 30%
+were tested.
+At a 10% risk tolerance, candidate optimal thresholds were approximately:
+Scenario	Candidate threshold
+ATM 1Y	0.020
+ITM 1Y	0.015
+OTM 1Y	0.025
+ATM 3M	0.050
+ATM 1Y high vol	0.020
+
+
+The exercise showed that the optimal threshold is not universal.
+It depends on:
+- moneyness
+- maturity
+- volatility
+- permitted hedge-risk tolerance
+11. Robust Multi-Seed Optimisation
+The initial optimisation occasionally selected thresholds very close to the risk boundary.
+To reduce the risk of overfitting to one simulation sample, the optimiser was made more conservative.
+The robust procedure:
+1. Tested each threshold across five independent Monte Carlo seeds.
+2. Required the average risk increase to remain below 8%.
+3. Required the worst training seed to remain below the final 10% risk limit.
+4. Selected the lowest-cost threshold satisfying both conditions.
+5. Froze the chosen threshold.
+6. Validated it on three unseen simulation seeds.
+For the high-volatility ATM 1Y option, the robust optimiser selected:
+\[
+\boxed{\delta^*=0.015}
+\]
+and the unseen validation results were:
+Validation metric	Result
+Average risk increase	4.90%
+Worst validation risk increase	5.40%
+Average transaction-cost saving	9.65%
+Average rebalances	121.5
+Validation result	ROBUST PASS
+
+
+The strategy therefore reduced rebalancing frequency by roughly half while keeping additional P&L risk well below the 10% target.
+12. Historical-Underlying Demo Backtest
+The final test applied the frozen robust thresholds to real historical underlying price paths.
+This is not a backtest using actual historical option-chain prices.
+Instead:
+- actual historical stock prices are used
+- theoretical European calls are created
+- pricing volatility is estimated using the preceding 60 trading days
+- the frozen event-driven hedge rule is compared with daily hedging
+- thresholds are not re-optimised on the historical paths
+Historical windows were tested quarterly from 2018 to 2024.
+AMZN was used for the standard moneyness and maturity scenarios.
+TSLA was used as the high-volatility underlying.
+Historical demo results
+Scenario	Threshold	Risk change vs daily	Transaction-cost saving	Rebalance reduction
+AMZN ATM 1Y	0.015	+1.23%	9.91%	60.56%
+AMZN ITM 1Y	0.015	+2.49%	10.86%	67.60%
+AMZN OTM 1Y	0.025	+2.86%	19.04%	71.53%
+AMZN ATM 3M	0.035	-0.06%	10.44%	61.02%
+TSLA ATM 1Y High Vol	0.015	+0.46%	8.60%	61.06%
+
+
+Across all five scenarios, the increase in P&L standard deviation remained extremely small.
+The maximum observed increase was:
+\[
+\boxed{2.86\%}.
+\]
+At the same time, the frozen event-driven strategy reduced:
+\[
+\boxed{60\%-72\%}
+\]
+of hedge adjustments and achieved approximately:
+\[
+\boxed{9\%-19\%}
+\]
+lower transaction costs.
+The OTM AMZN option produced the strongest efficiency gain:
+- 71.53% fewer rebalances
+- 19.04% lower transaction costs
+- only 2.86% higher P&L standard deviation
+The 3-month ATM demo produced virtually unchanged P&L dispersion while reducing transaction costs by approximately 10%.
+13. Main Findings
+The project produced five main findings.
+Finding 1 — More frequent hedging reduces discrete hedging risk
+Moving from monthly to daily hedging reduced the standard deviation of hedging P&L by approximately 78% in the baseline Black-Scholes simulation.
+Finding 2 — Delta hedging does not eliminate volatility exposure
+When an option priced at 20% volatility experienced only 10% realised volatility, the delta-hedged short call generated positive average P&L.
+When realised volatility rose to 30% or 40%, average P&L became strongly negative.
+Finding 3 — Transaction costs change the optimal hedging problem
+Daily hedging produced lower P&L dispersion but materially higher transaction costs.
+The correct hedging decision is therefore not simply "hedge as often as possible".
+Finding 4 — Event-driven hedging is more trading-efficient than naive daily hedging
+A delta-band rule can avoid many small hedge adjustments while retaining most of the risk reduction of daily hedging.
+Finding 5 — Robust event-driven rules generalised to historical underlying paths
+Across five historical demo scenarios, the frozen strategies reduced hedge turnover by approximately 60–72% and transaction costs by 9–19%, while increasing P&L standard deviation by no more than 2.86%.
+14. Limitations
+The model remains deliberately simplified.
+Black-Scholes assumptions
+The stock process is initially modelled using geometric Brownian motion with constant volatility and interest rates.
+Real markets exhibit:
+- stochastic volatility
+- jumps
+- volatility smiles and skews
+- changing interest rates
+- liquidity variation
+- bid-ask spreads
+- discrete dividends
+Transaction-cost model
+Trading costs are represented as a fixed proportional cost.
+Real execution costs may include:
+- bid-ask spread
+- commissions
+- market impact
+- slippage
+- nonlinear liquidity costs
+Historical demo options
+The historical test uses real underlying prices but theoretical option contracts.
+It does not use:
+- historical option-chain prices
+- actual historical implied volatility
+- actual historical bid-ask spreads
+Trailing realised volatility is used as an ex-ante volatility proxy.
+The historical experiment should therefore be described as a historical-underlying demo backtest rather than a historical option-trading backtest.
+Sample size
+The historical comparison uses 24 option windows per scenario.
+This is sufficient for a demonstration but not enough to establish a production trading strategy.
+15. Possible Extensions
+Potential future extensions include:
+- real historical option-chain data
+- implied-volatility surfaces
+- stochastic-volatility models
+- volatility skew
+- dividends
+- bid-ask spreads
+- expected shortfall as a risk constraint
+- gamma-based dynamic hedge bands
+- volatility-dependent thresholds
+- reinforcement learning or control-based hedge optimisation
+- multi-option portfolios rather than a single short call
+Conclusion
+This project began as an implementation of Black-Scholes option pricing but developed into an investigation of dynamic hedging efficiency.
+The central result is that calendar-based daily hedging can be unnecessarily expensive.
+A robust event-driven strategy that rebalances only when delta moves beyond a calibrated threshold can substantially reduce hedge turnover and transaction costs while maintaining very similar levels of P&L risk.
+The strongest historical demo result reduced hedge adjustments by more than 70% and transaction costs by approximately 19%, while increasing P&L standard deviation by less than 3%.
+The project therefore demonstrates how a theoretical derivatives-pricing model can be extended into a practical optimisation problem involving:
+- stochastic simulation
+- risk measurement
+- transaction costs
+- constrained optimisation
+- out-of-sample validation
+- historical testing
+rather than treating Black-Scholes as only a pricing formula.
